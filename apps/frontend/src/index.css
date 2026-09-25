@@ -3,16 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --color-primary: #6366F1;
-  --color-primary-rgb: 99, 102, 241;
-  --color-primary-hover: #4F46E5;
-  --color-secondary: #8B5CF6;
-  --color-secondary-rgb: 139, 92, 246;
-  --color-accent: #EC4899;
-  --color-accent-rgb: 236, 72, 153;
-  --color-bg: #FFFFFF;
-  --color-surface: #F8FAFC;
-  --color-border: #E2E8F0;
+  --color-primary: #0F3D36;
+  --color-primary-rgb: 15, 61, 54;
+  --color-primary-hover: #0B2E29;
+  --color-secondary: #0B2E29;
+  --color-secondary-rgb: 11, 46, 41;
+  --color-accent: #C3F230;
+  --color-accent-rgb: 195, 242, 48;
+  --color-bg: #FCFDF8;
+  --color-surface: #FFFFFF;
+  --color-border: #E2E8E4;
   --color-text: #0F172A;
   --color-text-muted: #64748B;
   --color-hero: #0F3D36;
@@ -23,6 +23,7 @@
   --color-status-pending: #FFF4CC;
   --color-status-pending-dot: #E4B029;
   --color-status-pending-text: #7A5B15;
+  color-scheme: light;
 }
 
 @layer base {
@@ -390,6 +391,43 @@
     letter-spacing: 0.08em;
     border: 1px solid #E2E8F0;
   }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    border-radius: 9999px;
+    background-color: var(--color-bg);
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+    border: 1px solid var(--color-border);
+    transition: all 180ms ease;
+    flex-shrink: 0;
+    min-height: 36px;
+  }
+  .chip:hover { border-color: var(--color-primary); color: var(--color-primary); }
+  .chip-active {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #ffffff;
+  }
+  .chip-active:hover { color: #ffffff; filter: brightness(0.95); }
+
+  .divide-y > * + * {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .active\:bg-brand-50:active,
+  .active\.bg-brand-50 {
+    background-color: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg));
+  }
+  .active\:scale-\[0\.99\]:active,
+  .active\.scale-\[0\.99\] { transform: scale(0.99); }
 
   .hero-dark {
     background-color: var(--color-hero);

@@ -6,6 +6,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
+import { relations } from 'drizzle-orm';
 
 function uuidPK(name: string) {
   return text(name).primaryKey().$defaultFn(() => crypto.randomUUID());
@@ -18,10 +19,10 @@ export const tenants = sqliteTable(
     slug: text('slug').notNull(),
     name: text('name').notNull(),
     logoUrl: text('logo_url'),
-    primaryColor: text('primary_color').notNull().default('#6366F1'),
-    secondaryColor: text('secondary_color').notNull().default('#8B5CF6'),
-    accentColor: text('accent_color').notNull().default('#EC4899'),
-    backgroundColor: text('background_color').notNull().default('#FFFFFF'),
+    primaryColor: text('primary_color').notNull().default('#0F3D36'),
+    secondaryColor: text('secondary_color').notNull().default('#0B2E29'),
+    accentColor: text('accent_color').notNull().default('#C3F230'),
+    backgroundColor: text('background_color').notNull().default('#FCFDF8'),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
@@ -67,7 +68,10 @@ export const students = sqliteTable(
     heightCm: integer('height_cm'),
     isApproved: integer('is_approved', { mode: 'boolean' }).notNull().default(false),
     approvedAt: integer('approved_at', { mode: 'timestamp_ms' }),
-    approvedBy: text('approved_by').references(() => users.id),
+    approvedBy: text('approved_by'),
+    planMonthlyValue: real('plan_monthly_value'),
+    planDueDay: integer('plan_due_day'),
+    planStatus: text('plan_status').notNull().default('INACTIVE'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
   },
@@ -75,9 +79,39 @@ export const students = sqliteTable(
     studentIdUniqueIdx: uniqueIndex('students_student_id_idx').on(table.tenantId, table.studentId),
     tenantIdx: index('students_tenant_idx').on(table.tenantId),
     approvalIdx: index('students_approval_idx').on(table.tenantId, table.isApproved),
+    planStatusIdx: index('students_plan_status_idx').on(table.tenantId, table.planStatus),
     userIdx: index('students_user_idx').on(table.userId),
   })
 );
+
+export const payments = sqliteTable(
+  'payments',
+  {
+    id: uuidPK('id'),
+    tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+    studentId: text('student_id').notNull().references(() => students.id, { onDelete: 'cascade' }),
+    referenceMonth: text('reference_month').notNull(),
+    dueDate: text('due_date').notNull(),
+    amountBrl: real('amount_brl').notNull(),
+    status: text('status').notNull().default('PENDING'),
+    paidAt: integer('paid_at', { mode: 'timestamp_ms' }),
+    paidBy: text('paid_by'),
+    paymentMethod: text('payment_method'),
+    notes: text('notes'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    tenantIdx: index('payments_tenant_idx').on(table.tenantId),
+    studentIdx: index('payments_student_idx').on(table.studentId),
+    uniquePerStudentMonth: uniqueIndex('payments_student_month_idx').on(table.studentId, table.referenceMonth),
+    statusIdx: index('payments_status_idx').on(table.tenantId, table.status),
+    dueDateIdx: index('payments_due_idx').on(table.tenantId, table.dueDate),
+  })
+);
+
+export type Payment = typeof payments.$inferSelect;
+export type NewPayment = typeof payments.$inferInsert;
 
 export const studentProgress = sqliteTable(
   'student_progress',
@@ -138,6 +172,7 @@ export const workoutExercises = sqliteTable(
     restSeconds: integer('rest_seconds'),
     loadKg: real('load_kg'),
     notes: text('notes'),
+    youtubeUrl: text('youtube_url'),
     orderIndex: integer('order_index').notNull().default(0),
     isCompleted: integer('is_completed', { mode: 'boolean' }).notNull().default(false),
     completedSets: integer('completed_sets').notNull().default(0),
@@ -160,3 +195,48 @@ export type Workout = typeof workouts.$inferSelect;
 export type NewWorkout = typeof workouts.$inferInsert;
 export type WorkoutExercise = typeof workoutExercises.$inferSelect;
 export type NewWorkoutExercise = typeof workoutExercises.$inferInsert;
+
+export const tenantsRelations = relations(tenants, ({ many }) => ({
+  users: many(users),
+  students: many(students),
+  payments: many(payments),
+  studentProgress: many(studentProgress),
+  workouts: many(workouts),
+}));
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [users.tenantId], references: [tenants.id] }),
+  approvedStudents: many(students, { relationName: 'approvedByUser' }),
+  trainedWorkouts: many(workouts, { relationName: 'trainerUser' }),
+  studentProfile: many(students, { relationName: 'userProfile' }),
+}));
+
+export const studentsRelations = relations(students, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [students.tenantId], references: [tenants.id] }),
+  approvedBy: one(users, { fields: [students.approvedBy], references: [users.id], relationName: 'approvedByUser' }),
+  user: one(users, { fields: [students.userId], references: [users.id], relationName: 'userProfile' }),
+  payments: many(payments),
+  progress: many(studentProgress),
+  workouts: many(workouts),
+}));
+
+export const paymentsRelations = relations(payments, ({ one }) => ({
+  tenant: one(tenants, { fields: [payments.tenantId], references: [tenants.id] }),
+  student: one(students, { fields: [payments.studentId], references: [students.id] }),
+}));
+
+export const studentProgressRelations = relations(studentProgress, ({ one }) => ({
+  tenant: one(tenants, { fields: [studentProgress.tenantId], references: [tenants.id] }),
+  student: one(students, { fields: [studentProgress.studentId], references: [students.id] }),
+}));
+
+export const workoutsRelations = relations(workouts, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [workouts.tenantId], references: [tenants.id] }),
+  student: one(students, { fields: [workouts.studentId], references: [students.id] }),
+  trainer: one(users, { fields: [workouts.trainerId], references: [users.id], relationName: 'trainerUser' }),
+  exercises: many(workoutExercises),
+}));
+
+export const workoutExercisesRelations = relations(workoutExercises, ({ one }) => ({
+  workout: one(workouts, { fields: [workoutExercises.workoutId], references: [workouts.id] }),
+}));

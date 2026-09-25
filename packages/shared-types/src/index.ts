@@ -41,6 +41,9 @@ export interface Student {
   isApproved: boolean;
   approvedAt: Date | null;
   approvedBy: string | null;
+  planMonthlyValue: number | null;
+  planDueDay: number | null;
+  planStatus: 'INACTIVE' | 'ACTIVE' | 'SUSPENDED';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -88,6 +91,7 @@ export interface WorkoutExercise {
   restSeconds: number | null;
   loadKg: number | null;
   notes: string | null;
+  youtubeUrl: string | null;
   orderIndex: number;
   isCompleted: boolean;
   completedSets: number;
@@ -126,6 +130,24 @@ export interface StudentRegisterRequest {
 export interface StudentRegisterResponse {
   studentId: string;
   message: string;
+}
+
+export type PaymentStatus = 'PENDING' | 'PAID' | 'LATE' | 'CANCELED';
+
+export interface Payment {
+  id: string;
+  tenantId: string;
+  studentId: string;
+  referenceMonth: string;
+  dueDate: Date | string;
+  amountBrl: number;
+  status: PaymentStatus;
+  paidAt: Date | null;
+  paidBy: string | null;
+  paymentMethod: 'PIX' | 'BOLETO' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'TRANSFER' | 'CASH' | 'OTHER' | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface ApproveStudentRequest {

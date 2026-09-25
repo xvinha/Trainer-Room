@@ -11,10 +11,6 @@ const createTenantSchema = z.object({
   slug: z.string().min(3).max(50).regex(/^[a-z0-9-]+$/),
   name: z.string().min(2).max(100),
   logoUrl: z.string().url().optional().nullable(),
-  primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-  secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-  accentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-  backgroundColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   trainerEmail: z.string().email(),
   trainerName: z.string().min(2),
   trainerPassword: z.string().min(6).optional(),
@@ -94,10 +90,10 @@ router.post('/', authMiddleware, requireRole('MASTER_ADMIN'), async (req: Reques
       slug: body.slug,
       name: body.name,
       logoUrl: body.logoUrl ?? null,
-      primaryColor: body.primaryColor ?? '#0F3D36',
-      secondaryColor: body.secondaryColor ?? '#0B2E29',
-      accentColor: body.accentColor ?? '#C3F230',
-      backgroundColor: body.backgroundColor ?? '#FCFDF8',
+      primaryColor: '#0F3D36',
+      secondaryColor: '#0B2E29',
+      accentColor: '#C3F230',
+      backgroundColor: '#FCFDF8',
     }).returning();
 
     const passwordHash = await hashPassword(body.trainerPassword || 'personal123');
@@ -155,10 +151,6 @@ router.put('/:tenantId', authMiddleware, requireRole('MASTER_ADMIN'), async (req
         slug: data.slug ?? tenant.slug,
         name: data.name ?? tenant.name,
         logoUrl: data.logoUrl !== undefined ? data.logoUrl : tenant.logoUrl,
-        primaryColor: data.primaryColor ?? tenant.primaryColor,
-        secondaryColor: data.secondaryColor ?? tenant.secondaryColor,
-        accentColor: data.accentColor ?? tenant.accentColor,
-        backgroundColor: data.backgroundColor ?? tenant.backgroundColor,
         updatedAt: new Date(),
       })
       .where(eq(schema.tenants.id, tenant.id))

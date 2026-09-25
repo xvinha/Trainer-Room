@@ -100,9 +100,10 @@ router.get('/by-id/:studentId', authMiddleware, requireRole('TRAINER'), requireT
   const rawId = req.params.studentId.toUpperCase().replace(/[^A-Z0-9]/g, '');
   const tenantId = req.auth!.tenantId!;
 
-  const student = await db.query.students.findFirst({
-    where: and(eq(schema.students.tenantId, tenantId), eq(schema.students.studentId, rawId)),
-  });
+  const rows = await db.select().from(schema.students)
+    .where(and(eq(schema.students.tenantId, tenantId), eq(schema.students.studentId, rawId)))
+    .limit(1);
+  const student = rows[0];
 
   if (!student) {
     return res.status(404).json({ success: false, error: 'Aluno com este ID não encontrado' });
@@ -121,46 +122,50 @@ router.get('/', authMiddleware, requireRole('TRAINER'), requireTenant, async (re
   if (status === 'approved') where.push(eq(schema.students.isApproved, true));
   if (search) where.push(like(schema.students.name, `%${search}%`));
 
-  const students = await db.query.students.findMany({
-    where: and(...where),
-    orderBy: [desc(schema.students.isApproved ? schema.students.approvedAt : schema.students.createdAt)],
-  });
+  const students = await db.select().from(schema.students).where(and(...where));
 
   return res.json({ success: true, data: students });
 });
 
 router.get('/:studentId/detail', authMiddleware, requireRole('TRAINER'), requireTenant, async (req: Request, res: Response) => {
   const tenantId = req.auth!.tenantId!;
-  const student = await db.query.students.findFirst({
-    where: and(eq(schema.students.tenantId, tenantId), eq(schema.students.id, req.params.studentId)),
-    with: { progress: { orderBy: desc(schema.studentProgress.measuredAt) } },
-  });
+  const sRows = await db.select().from(schema.students)
+    .where(and(eq(schema.students.tenantId, tenantId), eq(schema.students.id, req.params.studentId)))
+    .limit(1);
+  const student = sRows[0] as any;
 
   if (!student) return res.status(404).json({ success: false, error: 'Aluno não encontrado' });
+
+  const progress = await db.select().from(schema.studentProgress)
+    .where(and(eq(schema.studentProgress.studentId, student.id), eq(schema.studentProgress.tenantId, tenantId)))
+    .orderBy(desc(schema.studentProgress.measuredAt));
+  student.progress = progress;
+
   return res.json({ success: true, data: student });
 });
 
 router.get('/:studentId', authMiddleware, requireRole('TRAINER'), requireTenant, async (req: Request, res: Response) => {
   const tenantId = req.auth!.tenantId!;
-  const student = await db.query.students.findFirst({
-    where: and(eq(schema.students.tenantId, tenantId), eq(schema.students.id, req.params.studentId)),
-  });
+  const sRows = await db.select().from(schema.students)
+    .where(and(eq(schema.students.tenantId, tenantId), eq(schema.students.id, req.params.studentId)))
+    .limit(1);
+  const student = sRows[0];
 
   if (!student) return res.status(404).json({ success: false, error: 'Aluno não encontrado' });
 
-  const progress = await db.query.studentProgress.findMany({
-    where: and(eq(schema.studentProgress.studentId, student.id), eq(schema.studentProgress.tenantId, tenantId)),
-    orderBy: desc(schema.studentProgress.measuredAt),
-    limit: 20,
-  });
+  const progress = await db.select().from(schema.studentProgress)
+    .where(and(eq(schema.studentProgress.studentId, student.id), eq(schema.studentProgress.tenantId, tenantId)))
+    .orderBy(desc(schema.studentProgress.measuredAt))
+    .limit(20);
 
   let user: any = null;
-  if (student.userId) {
-    const rawUser = await db.query.users.findFirst({
-      where: eq(schema.users.id, student.userId),
-    });
+  if ((student as any).userId) {
+    const uRows = await db.select().from(schema.users)
+      .where(eq(schema.users.id, (student as any).userId))
+      .limit(1);
+    const rawUser: any = uRows[0];
     if (rawUser) {
-      const { passwordHash, ...safeUser } = rawUser as any;
+      const { passwordHash, ...safeUser } = rawUser;
       user = safeUser;
     }
   }
@@ -280,7 +285,7 @@ router.post('/approve', authMiddleware, requireRole('TRAINER'), requireTenant, a
   });
 
   if (!student) {
-    return res.status(404).json({ success: false, error: 'ID de aluno não encontrado na sua carteira' });
+    return res.status(404).json({ success: false, error: 'Solicitação não encontrada na sua carteira' });
   }
 
   if (student.isApproved) {
@@ -306,6 +311,26 @@ router.post('/approve', authMiddleware, requireRole('TRAINER'), requireTenant, a
     data: approved,
     message: `Aluno ${approved.name} aprovado com sucesso!`,
   });
+});
+
+router.post('/reject', authMiddleware, requireRole('TRAINER'), requireTenant, async (req: Request, res: Response) => {
+  const body = approveStudentSchema.parse(req.body);
+  const rawId = body.studentId.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const tenantId = req.auth!.tenantId!;
+
+  const student = await db.query.students.findFirst({
+    where: and(eq(schema.students.tenantId, tenantId), eq(schema.students.studentId, rawId)),
+  });
+  if (!student) {
+    return res.status(404).json({ success: false, error: 'Solicitação não encontrada na sua carteira' });
+  }
+
+  await db.delete(schema.students).where(eq(schema.students.id, student.id));
+  if (student.userId) {
+    await db.delete(schema.users).where(eq(schema.users.id, student.userId));
+  }
+
+  return res.json({ success: true, message: 'Solicitação de cadastro rejeitada' });
 });
 
 router.post('/:studentId/reject', authMiddleware, requireRole('TRAINER'), requireTenant, async (req: Request, res: Response) => {

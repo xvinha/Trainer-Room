@@ -7,6 +7,7 @@ import { authRouter } from './routes/auth';
 import { tenantsRouter } from './routes/tenants';
 import { studentsRouter } from './routes/students';
 import { workoutsRouter } from './routes/workouts';
+import { paymentsRouter } from './routes/payments';
 import { seedMasterAdmin } from './db/seed';
 import { initializeDb } from './db';
 
@@ -128,6 +129,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/tenants', tenantsRouter);
 app.use('/api/students', studentsRouter);
 app.use('/api/workouts', workoutsRouter);
+app.use('/api/payments', paymentsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

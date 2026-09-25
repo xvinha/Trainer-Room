@@ -1,8 +1,20 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
+import { eq, and, desc, asc, sql } from 'drizzle-orm';
 import { db, schema } from '../db';
 import { authMiddleware, requireRole, requireTenant } from '../middleware/auth';
+
+function attachExercises(workouts: any[], exercises: any[]) {
+  const byWorkout = new Map<string, any[]>();
+  for (const e of exercises) {
+    if (!byWorkout.has(e.workoutId)) byWorkout.set(e.workoutId, []);
+    byWorkout.get(e.workoutId)!.push(e);
+  }
+  for (const w of workouts) {
+    w.exercises = (byWorkout.get(w.id) || []).sort((a, b) => (Number(a.orderIndex || 0) - Number(b.orderIndex || 0)));
+  }
+  return workouts;
+}
 
 const router = Router();
 
@@ -14,6 +26,7 @@ const exerciseSchema = z.object({
   restSeconds: z.coerce.number().int().min(0).optional().nullable(),
   loadKg: z.coerce.number().min(0).optional().nullable(),
   notes: z.string().optional().nullable(),
+  youtubeUrl: z.string().trim().url().optional().or(z.string().trim().max(0)).optional().nullable(),
   orderIndex: z.coerce.number().int().default(0),
 });
 
@@ -45,9 +58,10 @@ router.post('/', authMiddleware, requireRole('TRAINER'), requireTenant, async (r
   const tenantId = req.auth!.tenantId!;
   const trainerId = req.auth!.userId;
 
-  const student = await db.query.students.findFirst({
-    where: and(eq(schema.students.id, body.studentId), eq(schema.students.tenantId, tenantId)),
-  });
+  const sRows = await db.select().from(schema.students)
+    .where(and(eq(schema.students.id, body.studentId), eq(schema.students.tenantId, tenantId)))
+    .limit(1);
+  const student = sRows[0];
   if (!student) return res.status(404).json({ success: false, error: 'Aluno não encontrado' });
   if (!student.isApproved) return res.status(403).json({ success: false, error: 'Aluno não aprovado' });
 
@@ -72,6 +86,7 @@ router.post('/', authMiddleware, requireRole('TRAINER'), requireTenant, async (r
       restSeconds: ex.restSeconds ?? null,
       loadKg: ex.loadKg ?? null,
       notes: ex.notes ?? null,
+      youtubeUrl: ex.youtubeUrl && ex.youtubeUrl.length > 0 ? ex.youtubeUrl : null,
       orderIndex: ex.orderIndex || idx,
     }));
 
@@ -96,11 +111,16 @@ router.get('/student/:studentId', authMiddleware, async (req: Request, res: Resp
     return res.status(403).json({ success: false, error: 'Acesso negado' });
   }
 
-  const workouts = await db.query.workouts.findMany({
-    where: and(...where),
-    orderBy: desc(schema.workouts.scheduledDate || schema.workouts.createdAt),
-    with: { exercises: { orderBy: schema.workoutExercises.orderIndex } },
-  });
+  const workouts = await db.select().from(schema.workouts)
+    .where(and(...where))
+    .orderBy(desc(sql`coalesce(${schema.workouts.scheduledDate}, ${schema.workouts.createdAt})`));
+
+  const wIds = workouts.map(w => w.id);
+  const exercises = wIds.length > 0
+    ? await db.select().from(schema.workoutExercises).where(sql`${schema.workoutExercises.workoutId} in (${wIds.join(',')})`)
+    : [];
+
+  attachExercises(workouts, exercises);
 
   return res.json({ success: true, data: workouts });
 });
@@ -108,23 +128,33 @@ router.get('/student/:studentId', authMiddleware, async (req: Request, res: Resp
 router.get('/me', authMiddleware, requireRole('STUDENT'), async (req: Request, res: Response) => {
   if (!req.auth?.studentId) return res.status(404).json({ success: false, error: 'Perfil de aluno não encontrado' });
 
-  const workouts = await db.query.workouts.findMany({
-    where: eq(schema.workouts.studentId, req.auth.studentId),
-    orderBy: desc(schema.workouts.scheduledDate || schema.workouts.createdAt),
-    with: { exercises: { orderBy: schema.workoutExercises.orderIndex } },
-    limit: 20,
-  });
+  const workouts = await db.select().from(schema.workouts)
+    .where(eq(schema.workouts.studentId, req.auth.studentId))
+    .orderBy(desc(sql`coalesce(${schema.workouts.scheduledDate}, ${schema.workouts.createdAt})`))
+    .limit(20);
+
+  const wIds = workouts.map(w => w.id);
+  const exercises = wIds.length > 0
+    ? await db.select().from(schema.workoutExercises).where(sql`${schema.workoutExercises.workoutId} in (${wIds.join(',')})`)
+    : [];
+
+  attachExercises(workouts, exercises);
 
   return res.json({ success: true, data: workouts });
 });
 
 router.get('/:workoutId', authMiddleware, async (req: Request, res: Response) => {
-  const workout = await db.query.workouts.findFirst({
-    where: eq(schema.workouts.id, req.params.workoutId),
-    with: { exercises: { orderBy: schema.workoutExercises.orderIndex } },
-  });
+  const wRows = await db.select().from(schema.workouts)
+    .where(eq(schema.workouts.id, req.params.workoutId))
+    .limit(1);
+  const workout = wRows[0];
 
   if (!workout) return res.status(404).json({ success: false, error: 'Treino não encontrado' });
+
+  const exercises = await db.select().from(schema.workoutExercises)
+    .where(eq(schema.workoutExercises.workoutId, workout.id))
+    .orderBy(asc(schema.workoutExercises.orderIndex));
+  workout.exercises = exercises;
 
   const tenantId = req.auth?.tenantId;
   const role = req.auth?.role;
@@ -142,9 +172,10 @@ router.put('/:workoutId', authMiddleware, requireRole('TRAINER'), requireTenant,
   const body = updateWorkoutSchema.parse(req.body);
   const tenantId = req.auth!.tenantId!;
 
-  const workout = await db.query.workouts.findFirst({
-    where: and(eq(schema.workouts.id, req.params.workoutId), eq(schema.workouts.tenantId, tenantId)),
-  });
+  const wRows = await db.select().from(schema.workouts)
+    .where(and(eq(schema.workouts.id, req.params.workoutId), eq(schema.workouts.tenantId, tenantId)))
+    .limit(1);
+  const workout = wRows[0];
   if (!workout) return res.status(404).json({ success: false, error: 'Treino não encontrado' });
 
   const result = await db.transaction(async (tx) => {
@@ -172,6 +203,7 @@ router.put('/:workoutId', authMiddleware, requireRole('TRAINER'), requireTenant,
         restSeconds: ex.restSeconds ?? null,
         loadKg: ex.loadKg ?? null,
         notes: ex.notes ?? null,
+        youtubeUrl: ex.youtubeUrl && ex.youtubeUrl.length > 0 ? ex.youtubeUrl : null,
         orderIndex: ex.orderIndex ?? idx,
       }));
       exercises = await tx.insert(schema.workoutExercises).values(newEx).returning();
@@ -185,9 +217,10 @@ router.put('/:workoutId', authMiddleware, requireRole('TRAINER'), requireTenant,
 
 router.delete('/:workoutId', authMiddleware, requireRole('TRAINER'), requireTenant, async (req: Request, res: Response) => {
   const tenantId = req.auth!.tenantId!;
-  const workout = await db.query.workouts.findFirst({
-    where: and(eq(schema.workouts.id, req.params.workoutId), eq(schema.workouts.tenantId, tenantId)),
-  });
+  const wRows = await db.select().from(schema.workouts)
+    .where(and(eq(schema.workouts.id, req.params.workoutId), eq(schema.workouts.tenantId, tenantId)))
+    .limit(1);
+  const workout = wRows[0];
   if (!workout) return res.status(404).json({ success: false, error: 'Treino não encontrado' });
 
   await db.delete(schema.workouts).where(eq(schema.workouts.id, workout.id));
@@ -204,16 +237,18 @@ router.post('/:workoutId/exercise/:exerciseId/toggle', authMiddleware, requireRo
   const studentId = req.auth!.studentId;
   if (!studentId) return res.status(403).json({ success: false, error: 'Perfil de aluno inválido' });
 
-  const workout = await db.query.workouts.findFirst({
-    where: eq(schema.workouts.id, req.params.workoutId),
-  });
+  const wRows = await db.select().from(schema.workouts)
+    .where(eq(schema.workouts.id, req.params.workoutId))
+    .limit(1);
+  const workout = wRows[0];
   if (!workout || workout.studentId !== studentId) {
     return res.status(403).json({ success: false, error: 'Acesso negado' });
   }
 
-  const exercise = await db.query.workoutExercises.findFirst({
-    where: and(eq(schema.workoutExercises.id, req.params.exerciseId), eq(schema.workoutExercises.workoutId, workout.id)),
-  });
+  const eRows = await db.select().from(schema.workoutExercises)
+    .where(and(eq(schema.workoutExercises.id, req.params.exerciseId), eq(schema.workoutExercises.workoutId, workout.id)))
+    .limit(1);
+  const exercise = eRows[0];
   if (!exercise) return res.status(404).json({ success: false, error: 'Exercício não encontrado' });
 
   const completedSets = body.completedSets ?? exercise.completedSets;
@@ -235,13 +270,17 @@ router.post('/:workoutId/finish', authMiddleware, requireRole('STUDENT'), async 
   const studentId = req.auth!.studentId;
   if (!studentId) return res.status(403).json({ success: false, error: 'Perfil de aluno inválido' });
 
-  const workout = await db.query.workouts.findFirst({
-    where: eq(schema.workouts.id, req.params.workoutId),
-    with: { exercises: true },
-  });
+  const wRows = await db.select().from(schema.workouts)
+    .where(eq(schema.workouts.id, req.params.workoutId))
+    .limit(1);
+  const workout = wRows[0];
   if (!workout || workout.studentId !== studentId) {
     return res.status(403).json({ success: false, error: 'Acesso negado' });
   }
+  const exercises = await db.select().from(schema.workoutExercises)
+    .where(eq(schema.workoutExercises.workoutId, workout.id))
+    .orderBy(asc(schema.workoutExercises.orderIndex));
+  workout.exercises = exercises;
 
   const [updated] = await db.update(schema.workouts)
     .set({

@@ -2,15 +2,15 @@ import { useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useParams, Link } from 'react-router-dom';
 import { useAuthStore, type AppTenantTheme } from './store/auth';
 import { getTabsForRole, MobileShell, TopBar, EmptyState, Toast } from './components/MobileLayout';
-import { Home, Users, Dumbbell, Plus, LogOut, Copy, CheckCircle, Clock, TrendingUp, ClipboardList, UserPlus, ChevronLeft, Edit3, X, ArrowRight, Check } from 'lucide-react';
+import { Home, Users, Dumbbell, Plus, LogOut, Copy, CheckCircle, Clock, TrendingUp, ClipboardList, UserPlus, ChevronLeft, Edit3, X, ArrowRight, Check, CreditCard, AlertTriangle, CalendarCheck, PauseCircle, Trash2 } from 'lucide-react';
 import api from './services/api';
 import { useState, type FormEvent } from 'react';
-import { formatStudentId, copyToClipboard, formatDate, cn } from './utils';
-import type { Student, Workout, StudentProgress } from '@trainer-room/shared-types';
+import { formatStudentId, copyToClipboard, formatDate, cn, extractYouTubeId, dayOfWeekLabel, dayOfWeekShort, computePlanStatus, formatCurrencyBrl, monthLabel, paymentMethodLabel } from './utils';
+import type { Student, Workout, StudentProgress, Payment } from '@trainer-room/shared-types';
 
 function useToast() {
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
-  const show = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+  const show = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 2800);
   };
@@ -127,8 +127,6 @@ function TenantPublicRegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [resultId, setResultId] = useState('');
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (slug) {
@@ -157,25 +155,12 @@ function TenantPublicRegisterPage() {
         password,
       });
       if (res.data.success) {
-        setResultId(res.data.data.studentId);
         setStep('success');
       }
     } catch (err: any) {
       show(err.response?.data?.error || 'Erro no cadastro', 'error');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleCopyId = async () => {
-    try {
-      const formatted = formatStudentId(resultId);
-      await copyToClipboard(formatted);
-      setCopied(true);
-      show('ID copiado!');
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      show('Não foi possível copiar', 'error');
     }
   };
 
@@ -253,41 +238,19 @@ function TenantPublicRegisterPage() {
               </div>
             </div>
 
-            <div className="card-id-dark mb-5">
-              <div className="relative z-10">
-                <p className="text-xs font-bold tracking-[0.18em] mb-3"
-                  style={{ color: 'rgba(255,255,255,0.6)' }}>
-                  SEU ID ÚNICO DE ALUNO
-                </p>
-                <div className="text-4xl font-black tracking-wider mb-6"
-                  style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
-                  {formatStudentId(resultId)}
+            <div className="card mb-5 p-6 text-left"
+              style={{ backgroundColor: 'var(--color-hero)', color: 'var(--color-hero-text)', borderColor: '#0A2B26', boxShadow: '0 10px 30px -12px rgba(15, 61, 54, 0.35)' }}>
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(195, 242, 48, 0.18)' }}>
+                  <Clock className="w-5 h-5" style={{ color: 'var(--color-accent-lime)' }} />
                 </div>
-                <button
-                  type="button"
-                  className="btn-lime"
-                  onClick={handleCopyId}>
-                  {copied ? (
-                    <>
-                      <Check className="w-5 h-5" />
-                      ID Copiado!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-5 h-5" />
-                      Copiar ID
-                    </>
-                  )}
-                </button>
+                <div>
+                  <p className="text-sm font-black mb-1" style={{ color: 'var(--color-accent-lime)' }}>Tudo certo por aqui</p>
+                  <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.82)' }}>
+                    Agora é só esperar. O seu Personal Trainer vai receber a sua solicitação e aprovar o seu acesso em breve.
+                  </p>
+                </div>
               </div>
-            </div>
-
-            <div className="card mb-5 p-5 text-left"
-              style={{ backgroundColor: '#FFFFFF', borderColor: '#E8ECE4' }}>
-              <p className="text-base leading-relaxed"
-                style={{ color: 'var(--color-text-muted)' }}>
-                Copie este ID e envie para o seu personal trainer no WhatsApp para que ele aprove o seu acesso aos treinos.
-              </p>
             </div>
 
             <div className="status-pending-card mb-7">
@@ -295,16 +258,37 @@ function TenantPublicRegisterPage() {
               Status: Aguardando aprovação do Personal
             </div>
 
-            <div className="flex justify-center">
+            <div className="card mb-7 !p-5" style={{ backgroundColor: 'var(--color-surface)' }}>
+              <h3 className="font-bold mb-3">E agora?</h3>
+              <ol className="space-y-3 text-sm">
+                <li className="flex gap-3">
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs" style={{ backgroundColor: 'var(--color-accent-lime)', color: '#0A2B26' }}>1</span>
+                  <p style={{ color: 'var(--color-text-muted)' }}>Deixe o app instalado ou aberto no seu celular.</p>
+                </li>
+                <li className="flex gap-3">
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs" style={{ backgroundColor: 'var(--color-accent-lime)', color: '#0A2B26' }}>2</span>
+                  <p style={{ color: 'var(--color-text-muted)' }}>Assim que aprovado, você receberá um e-mail de confirmação.</p>
+                </li>
+                <li className="flex gap-3">
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs" style={{ backgroundColor: 'var(--color-accent-lime)', color: '#0A2B26' }}>3</span>
+                  <p style={{ color: 'var(--color-text-muted)' }}>Volte aqui e entre com seu e-mail e senha cadastrados.</p>
+                </li>
+              </ol>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-3">
               <button
                 type="button"
-                className="btn-link-underline"
+                className="btn-secondary w-full"
                 onClick={() => {
                   setName(''); setEmail(''); setPassword(''); setConfirmPassword('');
                   setStep('register');
                 }}>
-                Voltar para o cadastro
+                <UserPlus className="w-4 h-4 mr-2" /> Novo cadastro
               </button>
+              <Link to="/login" className="btn-primary w-full inline-flex items-center justify-center">
+                Ir para Login
+              </Link>
             </div>
           </div>
         </div>
@@ -324,7 +308,7 @@ function TenantPublicRegisterPage() {
             Bem-vindo à sua nova rotina de treinos!
           </h1>
           <p className="text-base leading-relaxed" style={{ color: 'var(--color-hero-muted)' }}>
-            Cadastre-se abaixo para gerar seu acesso e enviar ao seu personal.
+            Cadastre-se abaixo para enviar sua solicitação de acesso ao seu Personal.
           </p>
         </div>
       </section>
@@ -398,7 +382,7 @@ function TenantPublicRegisterPage() {
 }
 
 function AdminDashboard() {
-  const { user, logout, fetchTenantTheme } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const tabs = getTabsForRole(user?.role);
   const [tenants, setTenants] = useState<any[]>([]);
@@ -432,8 +416,7 @@ function AdminDashboard() {
           <div key={t.id} className="card flex items-center justify-between gap-3"
             onClick={() => navigate(`/admin/tenants/${t.id}`)}>
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-11 h-11 rounded-xl flex-shrink-0 flex items-center justify-center text-white font-bold text-lg"
-                style={{ backgroundColor: t.primaryColor }}>
+              <div className="w-11 h-11 rounded-xl flex-shrink-0 flex items-center justify-center text-white font-bold text-lg bg-brand-gradient">
                 {t.name.charAt(0)}
               </div>
               <div className="min-w-0 flex-1">
@@ -463,8 +446,7 @@ function AdminTenantsNew() {
   const tabs = getTabsForRole(user?.role);
   const { toast, show } = useToast();
   const [form, setForm] = useState({
-    slug: '', name: '', primaryColor: '#0F3D36', secondaryColor: '#0B2E29',
-    accentColor: '#C3F230', backgroundColor: '#FCFDF8',
+    slug: '', name: '',
     trainerEmail: '', trainerName: '', trainerPassword: '', trainerPhone: '',
   });
   const [loading, setLoading] = useState(false);
@@ -482,10 +464,6 @@ function AdminTenantsNew() {
         setForm({
           slug: tenant.slug || '',
           name: tenant.name || '',
-          primaryColor: tenant.primaryColor || '#0F3D36',
-          secondaryColor: tenant.secondaryColor || '#0B2E29',
-          accentColor: tenant.accentColor || '#C3F230',
-          backgroundColor: tenant.backgroundColor || '#FCFDF8',
           trainerEmail: trainer?.email || '',
           trainerName: trainer?.name || '',
           trainerPassword: '',
@@ -574,7 +552,7 @@ function AdminTenantsNew() {
 
         <div className="card space-y-4">
           <h3 className="font-bold flex items-center gap-2">
-            <UserPlus className="w-5 h-5 text-brand" /> Identidade Visual (White-Label)
+            <UserPlus className="w-5 h-5 text-brand" /> Dados do Tenancy
           </h3>
           <div>
             <label className="label">Nome da marca *</label>
@@ -596,36 +574,6 @@ function AdminTenantsNew() {
             <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
               Link de cadastro dos alunos
             </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Cor Principal</label>
-              <input type="color" className="input-field h-12 p-1 cursor-pointer" value={form.primaryColor}
-                onChange={(e) => setForm({ ...form, primaryColor: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Cor Secundária</label>
-              <input type="color" className="input-field h-12 p-1 cursor-pointer" value={form.secondaryColor}
-                onChange={(e) => setForm({ ...form, secondaryColor: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Cor Destaque</label>
-              <input type="color" className="input-field h-12 p-1 cursor-pointer" value={form.accentColor}
-                onChange={(e) => setForm({ ...form, accentColor: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Fundo</label>
-              <input type="color" className="input-field h-12 p-1 cursor-pointer" value={form.backgroundColor}
-                onChange={(e) => setForm({ ...form, backgroundColor: e.target.value })} />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl flex items-center justify-center gap-4 text-white font-bold shadow-mobile-lg"
-            style={{ background: `linear-gradient(135deg, ${form.primaryColor}, ${form.secondaryColor})` }}>
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/20">
-              {form.name.charAt(0) || '?'}
-            </div>
-            <span className="text-lg">{form.name || 'Preview'}</span>
           </div>
         </div>
 
@@ -657,8 +605,7 @@ function AdminTenantsList() {
           <div key={t.id} className="card flex items-center justify-between gap-3"
             onClick={() => navigate(`/admin/tenants/${t.id}`)}>
             <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="w-11 h-11 rounded-xl flex-shrink-0 flex items-center justify-center text-white font-bold text-lg"
-                style={{ backgroundColor: t.primaryColor }}>
+              <div className="w-11 h-11 rounded-xl flex-shrink-0 flex items-center justify-center text-white font-bold text-lg bg-brand-gradient">
                 {t.name.charAt(0)}
               </div>
               <div className="min-w-0 flex-1">
@@ -738,16 +685,16 @@ function TrainerDashboard() {
       <h2 className="font-bold mb-3">Ações Rápidas</h2>
       <div className="space-y-3">
         <div className="card flex items-center justify-between gap-3 active:scale-[0.99] transition-transform"
-          onClick={() => navigate('/trainer/approve')}>
+          onClick={() => navigate('/trainer/students?status=pending')}>
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl flex items-center justify-center"
               style={{ backgroundColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)' }}>
               <UserPlus className="w-6 h-6" style={{ color: 'var(--color-accent)' }} />
             </div>
             <div>
-              <p className="font-bold">Aprovar Aluno por ID</p>
+              <p className="font-bold">Solicitações pendentes</p>
               <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                {stats.pending} aguardando
+                {stats.pending} aguardando aprovação
               </p>
             </div>
           </div>
@@ -794,15 +741,45 @@ function TrainerStudents() {
   const tabs = getTabsForRole(user?.role);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved'>('pending');
   const [students, setStudents] = useState<Student[]>([]);
+  const [paymentsPerStudent, setPaymentsPerStudent] = useState<Record<string, Payment[]>>({});
+  const { toast, show } = useToast();
+
+  const currentMonth = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
 
   useEffect(() => {
     const status = filter === 'all' ? '' : filter;
-    api.get(`/students${status ? `?status=${status}` : ''}`).then((r) => setStudents(r.data.data || []));
+    Promise.all([
+      api.get(`/students${status ? `?status=${status}` : ''}`),
+    ]).then(async ([r]) => {
+      const list: Student[] = r.data.data || [];
+      setStudents(list);
+      const byId: Record<string, Payment[]> = {};
+      for (const s of list.filter(x => x.isApproved)) {
+        try {
+          const pay = await api.get(`/payments?studentId=${s.id}`);
+          byId[s.id] = pay.data?.data || [];
+        } catch { byId[s.id] = []; }
+      }
+      setPaymentsPerStudent(byId);
+    });
   }, [filter]);
 
+  const approvedStudents = students.filter(s => s.isApproved);
+
+  const getCurrentMonthPaid = (studentId: string): 'PAID' | 'PENDING' | 'NONE' => {
+    const list = paymentsPerStudent[studentId] || [];
+    const p = list.find(x => x.referenceMonth === currentMonth);
+    if (!p) return 'NONE';
+    return p.status === 'PAID' ? 'PAID' : 'PENDING';
+  };
+
   return (
-    <MobileShell title="Alunos" tabs={tabs}
-      right={<button className="btn-ghost !py-2 !px-2 !min-h-0" onClick={() => navigate('/trainer/approve')}><UserPlus className="w-5 h-5" /></button>}>
+    <MobileShell title="Alunos" tabs={tabs}>
+      {toast && <Toast message={toast.msg} type={toast.type} />}
+
       <div className="flex gap-2 mb-4 p-1 rounded-xl" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
         {(['pending', 'approved', 'all'] as const).map((f) => (
           <button key={f}
@@ -812,7 +789,7 @@ function TrainerStudents() {
               filter === f ? 'text-white shadow-sm' : ''
             )}
             style={filter === f ? { backgroundColor: 'var(--color-primary)' } : { color: 'var(--color-text-muted)' }}>
-            {f === 'pending' ? 'Pendentes' : f === 'approved' ? 'Aprovados' : 'Todos'}
+            {f === 'pending' ? `Pendentes` : f === 'approved' ? `Aprovados (${approvedStudents.length})` : 'Todos'}
           </button>
         ))}
       </div>
@@ -821,150 +798,63 @@ function TrainerStudents() {
         {students.length === 0 && (
           <EmptyState icon={Users}
             title={filter === 'pending' ? 'Sem pendências no momento' : filter === 'approved' ? 'Nenhum aluno aprovado ainda' : 'Sem alunos'}
-            subtitle="Digite o ID do aluno para aprovar" />
+            subtitle={filter === 'pending' ? 'Novos cadastros pelo link aparecem aqui automaticamente' : 'Compartilhe o link do seu painel para começar'} />
         )}
-        {students.map((s) => (
-          <div key={s.id} className="card flex items-center justify-between gap-3"
-            onClick={() => navigate(`/trainer/students/${s.id}`)}>
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0"
-                style={{ backgroundColor: s.isApproved ? 'var(--color-primary)' : '#F59E0B' }}>
-                {s.name.charAt(0)}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="font-bold truncate">{s.name}</p>
-                  <span className={cn('badge', s.isApproved ? 'badge-approved' : 'badge-pending')}>
-                    {s.isApproved ? 'Aprovado' : 'Pendente'}
-                  </span>
+        {students.map((s) => {
+          const monthStatus = s.isApproved ? getCurrentMonthPaid(s.id) : null;
+          return (
+            <div key={s.id} className="card flex items-start justify-between gap-3"
+              onClick={() => navigate(`/trainer/students/${s.id}`)}>
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0"
+                  style={{ backgroundColor: s.isApproved ? 'var(--color-primary)' : '#F59E0B' }}>
+                  {s.name.charAt(0)}
                 </div>
-                <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                  ID: {formatStudentId(s.studentId)}
-                </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <p className="font-bold truncate">{s.name}</p>
+                    <span className={cn('badge', s.isApproved ? 'badge-approved' : 'badge-pending')}>
+                      {s.isApproved ? 'Aprovado' : 'Pendente'}
+                    </span>
+                    {s.isApproved && monthStatus === 'PAID' && (
+                      <span className="badge badge-approved">
+                        <CheckCircle className="w-3 h-3 mr-1 -ml-1" /> Este mês pago
+                      </span>
+                    )}
+                    {s.isApproved && monthStatus !== 'PAID' && (
+                      <span className="badge badge-pending">
+                        {monthStatus === 'NONE' ? 'Sem registro este mês' : 'Pendente este mês'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--color-text-muted)' }}>
+                    {s.email || (s.phone || 'Solicitação nova')}
+                  </p>
+                </div>
               </div>
-            </div>
-            <ChevronLeft className="w-5 h-5 rotate-180 flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
-          </div>
-        ))}
-      </div>
-    </MobileShell>
-  );
-}
-
-function TrainerApprovePage() {
-  const navigate = useNavigate();
-  const { user } = useAuthStore();
-  const tabs = getTabsForRole(user?.role);
-  const { toast, show } = useToast();
-  const [studentId, setStudentId] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [found, setFound] = useState<Student | null>(null);
-  const [searching, setSearching] = useState(false);
-
-  const search = async (e?: FormEvent) => {
-    e?.preventDefault();
-    if (!studentId.trim()) return;
-    try {
-      setSearching(true);
-      setFound(null);
-      const res = await api.get(`/students/by-id/${studentId.trim()}`);
-      if (res.data.success) setFound(res.data.data);
-    } catch (err: any) {
-      show(err.response?.data?.error || 'Aluno não encontrado', 'error');
-    } finally { setSearching(false); }
-  };
-
-  const approve = async () => {
-    if (!found) return;
-    try {
-      setLoading(true);
-      const res = await api.post('/students/approve', { studentId: found.studentId });
-      if (res.data.success) {
-        show(`${found.name} aprovado com sucesso!`);
-        setFound(null);
-        setStudentId('');
-      }
-    } catch (err: any) {
-      show(err.response?.data?.error || 'Erro ao aprovar', 'error');
-    } finally { setLoading(false); }
-  };
-
-  return (
-    <MobileShell title="Aprovar Aluno" tabs={tabs}
-      left={<button className="btn-ghost !py-2 !px-2 !min-h-0" onClick={() => navigate('/trainer')}><ChevronLeft className="w-6 h-6" /></button>}>
-      {toast && <Toast message={toast.msg} type={toast.type} />}
-
-      <form onSubmit={search} className="card mb-5 !p-5">
-        <label className="label !text-base">Digite o ID do Aluno</label>
-        <div className="flex gap-2">
-          <input
-            type="text" className="input-field !text-xl !font-mono !tracking-widest text-center uppercase"
-            placeholder="ABCD-1234"
-            value={studentId} onChange={(e) => setStudentId(e.target.value.toUpperCase())}
-            maxLength={12} autoFocus
-          />
-        </div>
-        <button type="submit" className="btn-primary w-full mt-4" disabled={searching || !studentId.trim()}>
-          {searching ? 'Buscando...' : 'Buscar Aluno'}
-        </button>
-      </form>
-
-      {found && (
-        <div className="card !p-5 shadow-mobile-lg">
-          <div className="flex items-start gap-4 mb-4">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-white text-2xl flex-shrink-0"
-              style={{ backgroundColor: found.isApproved ? 'var(--color-primary)' : '#F59E0B' }}>
-              {found.name.charAt(0)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-bold text-lg truncate">{found.name}</h3>
-                <span className={cn('badge', found.isApproved ? 'badge-approved' : 'badge-pending')}>
-                  {found.isApproved ? 'Já aprovado' : 'Pendente'}
-                </span>
-              </div>
-              <p className="font-mono text-sm font-semibold mb-1" style={{ color: 'var(--color-primary)' }}>
-                ID: {formatStudentId(found.studentId)}
-              </p>
-              {(found.email || found.phone) && (
-                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  {found.email && <>{found.email}<br /></>}
-                  {found.phone && <>{found.phone}</>}
-                </p>
+              {!s.isApproved && (
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      const res = await api.post('/students/approve', { studentId: s.studentId });
+                      if (res.data.success) {
+                        setStudents(list => list.map(x => x.id === s.id ? { ...x, isApproved: true } : x));
+                        show(`Aluno ${s.name} aprovado!`, 'success');
+                      }
+                    } catch (err: any) {
+                      show(err.response?.data?.error || 'Erro ao aprovar', 'error');
+                    }
+                  }}
+                  className="btn-primary !py-2 !px-4 !min-h-0 text-sm flex-shrink-0">
+                  ✓ Aprovar
+                </button>
               )}
-              <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>
-                Cadastrado em {formatDate(found.createdAt)}
-              </p>
+              {s.isApproved && <ChevronLeft className="w-5 h-5 rotate-180 flex-shrink-0 mt-5" style={{ color: 'var(--color-text-muted)' }} />}
             </div>
-          </div>
-
-          <div className="divider" />
-          <div className="grid grid-cols-2 gap-2">
-            <button className="btn-secondary" onClick={() => { setFound(null); setStudentId(''); }}>
-              Buscar outro
-            </button>
-            <button
-              className={cn(found.isApproved ? 'btn-secondary' : 'btn-primary')}
-              onClick={approve}
-              disabled={loading || found.isApproved}>
-              {loading ? 'Aprovando...' : found.isApproved ? 'Já aprovado' : '✓ Aprovar Acesso'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-8 p-4 rounded-2xl text-sm"
-        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', border: '1px dashed color-mix(in srgb, var(--color-primary) 30%, transparent)' }}>
-        <p className="font-bold mb-2 flex items-center gap-2">
-          <Clock className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
-          Como funciona a aprovação?
-        </p>
-        <ol className="space-y-1 list-decimal list-inside" style={{ color: 'var(--color-text-muted)' }}>
-          <li>O aluno se cadastra no link do seu painel</li>
-          <li>O sistema gera um ID único para ele</li>
-          <li>O aluno envia o ID para você</li>
-          <li>Você aprova aqui e libera os treinos</li>
-        </ol>
+          );
+        })}
       </div>
     </MobileShell>
   );
@@ -991,14 +881,12 @@ function StudentDashboard() {
       right={<button className="btn-ghost !py-2 !px-2 !min-h-0" onClick={logout}><LogOut className="w-5 h-5" /></button>}>
       <div className="card mb-6 !p-5 bg-brand-gradient text-white border-none">
         <p className="text-xs opacity-80 mb-1">Olá,</p>
-        <h2 className="text-2xl font-black mb-4">{user?.name.split(' ')[0]}!</h2>
-
-        {student && (
-          <div className="p-3 rounded-xl bg-white/15 backdrop-blur-sm">
-            <p className="text-xs opacity-80">Seu ID de Aluno</p>
-            <p className="font-mono font-black text-xl tracking-widest">{formatStudentId(student.studentId)}</p>
-          </div>
-        )}
+        <h2 className="text-2xl font-black mb-3">{user?.name.split(' ')[0]}!</h2>
+        <p className="text-sm leading-relaxed opacity-90">
+          {student?.isApproved
+            ? 'Seus treinos estão abaixo. Qualquer dúvida fale com seu Personal!'
+            : 'Sua conta está em análise. Aguarde a aprovação do seu Personal Trainer para acessar os treinos.'}
+        </p>
       </div>
 
       <h2 className="font-bold mb-3 flex items-center gap-2">
@@ -1251,6 +1139,30 @@ function StudentWorkoutDetail() {
                   Descanso: {ex.restSeconds}s entre séries
                 </p>
               )}
+              {ex.notes && (
+                <p className="text-xs ml-9 mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                  💡 {ex.notes}
+                </p>
+              )}
+              {extractYouTubeId(ex.youtubeUrl) && (
+                <div className="ml-9 mt-3 rounded-2xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                  <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+                    <iframe
+                      className="absolute inset-0 w-full h-full"
+                      src={`https://www.youtube.com/embed/${extractYouTubeId(ex.youtubeUrl)}?rel=0`}
+                      title={`Vídeo: ${ex.name}`}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen />
+                  </div>
+                  <div className="p-3 flex items-center justify-between" style={{ backgroundColor: 'var(--color-bg)' }}>
+                    <p className="text-xs font-semibold" style={{ color: 'var(--color-text-muted)' }}>🎬 Demonstração</p>
+                    <a href={ex.youtubeUrl} target="_blank" rel="noreferrer noopener"
+                       className="btn-ghost !py-1.5 !px-3 !min-h-0 text-xs font-semibold">
+                      Abrir no YouTube ↗
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1378,16 +1290,91 @@ function StudentProgressPage() {
 }
 
 function GenericProfilePage() {
-  const { user, tenant, student, logout } = useAuthStore();
+  const { user, tenant, student, logout, setAuth } = useAuthStore();
   const navigate = useNavigate();
   const tabs = getTabsForRole(user?.role);
+  const { toast, show } = useToast();
+  const [editingAccount, setEditingAccount] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: (user as any)?.phone || '',
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      name: user?.name || prev.name,
+      email: user?.email || prev.email,
+      phone: (user as any)?.phone || prev.phone,
+    }));
+  }, [user?.id]);
+
   const copyLink = async () => {
     if (!tenant) return;
     const link = `${window.location.origin}/t/${tenant.slug}`;
     try { await copyToClipboard(link); show('Link copiado! Envie para seus alunos', 'success'); }
     catch { show('Não foi possível copiar', 'error'); }
   };
-  const { toast, show } = useToast();
+
+  const startEdit = () => {
+    setForm({
+      name: user?.name || '',
+      email: user?.email || '',
+      phone: (user as any)?.phone || '',
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
+    setEditingAccount(true);
+  };
+
+  const submitAccount = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      if (form.newPassword && form.newPassword.length < 8) {
+        show('Nova senha deve ter pelo menos 8 dígitos', 'error');
+        return;
+      }
+      if (form.newPassword && form.newPassword !== form.confirmPassword) {
+        show('Nova senha e confirmação não coincidem', 'error');
+        return;
+      }
+      setSaving(true);
+      const payload: any = {
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim() || null,
+      };
+      if (form.newPassword) {
+        payload.currentPassword = form.currentPassword;
+        payload.newPassword = form.newPassword;
+      }
+      const res = await api.put('/auth/profile', payload);
+      if (res.data.success) {
+        const updatedUser = res.data.data.user;
+        if (setAuth) {
+          const state: any = useAuthStore.getState();
+          setAuth({
+            token: state.token,
+            user: updatedUser,
+            tenant: state.tenant,
+            student: state.student,
+          });
+        }
+        show('Conta atualizada com sucesso!');
+        setEditingAccount(false);
+      }
+    } catch (err: any) {
+      show(err.response?.data?.error || 'Erro ao salvar alterações', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <MobileShell title="Perfil" tabs={tabs}>
@@ -1415,45 +1402,131 @@ function GenericProfilePage() {
           <div className="flex items-center gap-3 mb-4">
             {tenant.logoUrl
               ? <img src={tenant.logoUrl} alt="" className="w-14 h-14 rounded-2xl object-cover" />
-              : <div className="w-14 h-14 rounded-2xl text-white font-bold text-xl flex items-center justify-center" style={{ backgroundColor: tenant.primaryColor }}>{tenant.name.charAt(0)}</div>}
+              : <div className="w-14 h-14 rounded-2xl text-white font-bold text-xl flex items-center justify-center bg-brand-gradient">{tenant.name.charAt(0)}</div>}
             <div className="flex-1 min-w-0">
               <p className="font-bold truncate">{tenant.name}</p>
               <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>/{tenant.slug}</p>
             </div>
           </div>
           <p className="text-xs font-semibold mb-2" style={{ color: 'var(--color-text-muted)' }}>Link de cadastro dos alunos:</p>
-          <div className="flex items-center gap-2 mb-4 p-3 rounded-xl" style={{ backgroundColor: 'var(--color-surface)' }}>
+          <div className="flex items-center gap-2 p-3 rounded-xl" style={{ backgroundColor: 'var(--color-surface)' }}>
             <span className="text-xs font-semibold truncate flex-1">/t/{tenant.slug}</span>
             <button className="btn-ghost !py-2 !px-3 !min-h-0 text-sm" onClick={copyLink}>
               <Copy className="w-4 h-4 mr-1" /> Copiar
             </button>
           </div>
-          <div className="flex gap-2">
-            <div className="flex-1 h-10 rounded-lg" style={{ backgroundColor: tenant.primaryColor }} />
-            <div className="flex-1 h-10 rounded-lg" style={{ backgroundColor: tenant.secondaryColor }} />
-            <div className="flex-1 h-10 rounded-lg" style={{ backgroundColor: tenant.accentColor }} />
-          </div>
         </div>
       )}
 
-      {student && (
-        <div className="card mb-5 !p-5">
-          <h3 className="font-bold mb-3">Meu ID de Aluno</h3>
-          <div className="flex items-center justify-between p-4 rounded-xl mb-2"
-            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)' }}>
-            <span className="font-mono font-black text-xl tracking-widest text-brand">{formatStudentId(student.studentId)}</span>
-            <button className="btn-ghost !py-2 !px-3 !min-h-0 text-sm"
-              onClick={async () => { try { await copyToClipboard(student.studentId); show('ID copiado'); } catch { show('Erro ao copiar', 'error'); } }}>
-              <Copy className="w-4 h-4" />
+      <div className="card mb-5 !p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-brand" /> Conta
+          </h3>
+          {!editingAccount && (
+            <button className="btn-ghost !py-2 !px-3 !min-h-0 text-sm" onClick={startEdit}>
+              <Edit3 className="w-4 h-4 mr-1" /> Editar
             </button>
-          </div>
-          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            Status: <span className={cn('badge', student.isApproved ? 'badge-approved' : 'badge-pending')} style={{ display: 'inline-flex' }}>
-              {student.isApproved ? 'Aprovado' : 'Pendente'}
-            </span>
-          </p>
+          )}
         </div>
-      )}
+
+        {!editingAccount ? (
+          <div className="space-y-3 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold mb-0.5" style={{ color: 'var(--color-text-muted)' }}>Nome</p>
+                <p className="font-semibold">{user?.name}</p>
+              </div>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--color-surface)' }}>
+                <UserPlus className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+              </div>
+            </div>
+            <div className="w-full h-px" style={{ backgroundColor: 'var(--color-border)' }} />
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold mb-0.5" style={{ color: 'var(--color-text-muted)' }}>E-mail</p>
+                <p className="font-semibold break-all">{user?.email}</p>
+              </div>
+            </div>
+            <div className="w-full h-px" style={{ backgroundColor: 'var(--color-border)' }} />
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold mb-0.5" style={{ color: 'var(--color-text-muted)' }}>Telefone</p>
+                <p className="font-semibold">{(user as any)?.phone || '—'}</p>
+              </div>
+            </div>
+            <div className="w-full h-px" style={{ backgroundColor: 'var(--color-border)' }} />
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold mb-0.5" style={{ color: 'var(--color-text-muted)' }}>Senha</p>
+                <p className="font-semibold" style={{ color: 'var(--color-text-muted)' }}>••••••••</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={submitAccount} className="space-y-3">
+            <div>
+              <label className="label">Nome</label>
+              <input type="text" className="input-field" required minLength={2}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">E-mail</label>
+              <input type="email" className="input-field" required
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Telefone</label>
+              <input type="tel" className="input-field"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                placeholder="(11) 90000-0000" />
+            </div>
+            <div className="pt-2">
+              <p className="text-xs font-bold mb-2" style={{ color: 'var(--color-text)' }}>Alterar senha</p>
+              <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>Preencha apenas se quiser trocar sua senha.</p>
+              <div className="space-y-3">
+                <div>
+                  <label className="label">Senha atual</label>
+                  <input type="password" className="input-field"
+                    value={form.currentPassword}
+                    onChange={(e) => setForm({ ...form, currentPassword: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Nova senha</label>
+                    <input type="password" className="input-field"
+                      value={form.newPassword}
+                      onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
+                      placeholder="Mín. 8 dígitos" />
+                  </div>
+                  <div>
+                    <label className="label">Confirmar</label>
+                    <input type="password" className="input-field"
+                      value={form.confirmPassword}
+                      onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                      placeholder="Repita a nova" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button type="button" className="btn-secondary w-full" onClick={() => setEditingAccount(false)} disabled={saving}>
+                <X className="w-4 h-4 mr-1" /> Cancelar
+              </button>
+              <button type="submit" className="btn-primary w-full" disabled={saving}>
+                {saving ? 'Salvando...' : (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-1" /> Salvar
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
 
       <button className="btn-danger w-full" onClick={() => { logout(); navigate('/login'); }}>
         <LogOut className="w-5 h-5 mr-2" /> Sair da conta
@@ -1474,6 +1547,12 @@ function TrainerStudentDetail() {
   const [student, setStudent] = useState<any>(null);
   const [userData, setUserData] = useState<any>(null);
   const [progress, setProgress] = useState<any[]>([]);
+  const [studentWorkouts, setStudentWorkouts] = useState<any[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [newMonth, setNewMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [form, setForm] = useState({
     name: '', email: '', phone: '', birthDate: '', gender: '' as '' | 'M' | 'F' | 'O', heightCm: '' as string | number, password: '',
   });
@@ -1484,12 +1563,18 @@ function TrainerStudentDetail() {
     (async () => {
       try {
         setFetching(true);
-        const res = await api.get(`/students/${id}`);
+        const [res, resW, resP] = await Promise.all([
+          api.get(`/students/${id}`),
+          api.get(`/workouts/student/${id}`).catch(() => ({ data: { data: [] } })),
+          api.get(`/payments?studentId=${id}`).catch(() => ({ data: { data: [] } })),
+        ]);
         if (cancelled || !res.data.success) return;
         const { student: s, user: u, progress: p } = res.data.data;
         setStudent(s);
         setUserData(u);
         setProgress(p || []);
+        setStudentWorkouts(resW.data?.data || []);
+        setPayments(resP.data?.data || []);
         setForm({
           name: s?.name || '',
           email: s?.email || '',
@@ -1536,6 +1621,67 @@ function TrainerStudentDetail() {
     } finally { setSaving(false); }
   };
 
+  const reloadPayments = async () => {
+    if (!id) return;
+    try {
+      const res = await api.get(`/payments?studentId=${id}`);
+      setPayments(res.data?.data || []);
+    } catch {}
+  };
+
+  const addMonthPayment = async () => {
+    if (!id || !newMonth) return;
+    try {
+      setSaving(true);
+      const [y, m] = newMonth.split('-').map(Number);
+      const dueDate = `${newMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+      const existing = payments.find(p => p.referenceMonth === newMonth);
+      if (existing) {
+        show('Este mês já está registrado', 'warning');
+        return;
+      }
+      await api.post('/payments', {
+        studentId: id,
+        referenceMonth: newMonth,
+        dueDate,
+        amountBrl: 0,
+        status: 'PENDING',
+      });
+      show(`${monthLabel(newMonth)} adicionado!`, 'success');
+      await reloadPayments();
+    } catch (err: any) {
+      show(err.response?.data?.error || 'Erro ao adicionar mês', 'error');
+    } finally { setSaving(false); }
+  };
+
+  const togglePaymentStatus = async (p: Payment) => {
+    try {
+      setSaving(true);
+      if (p.status === 'PAID') {
+        await api.post(`/payments/${p.id}/mark-pending`);
+        show('Alterado para não pago', 'info');
+      } else {
+        await api.post(`/payments/${p.id}/mark-paid`, { paymentMethod: 'OTHER' });
+        show('Marcado como pago!', 'success');
+      }
+      await reloadPayments();
+    } catch (err: any) {
+      show(err.response?.data?.error || 'Erro', 'error');
+    } finally { setSaving(false); }
+  };
+
+  const deletePayment = async (paymentId: string) => {
+    if (!confirm('Remover este mês do histórico?')) return;
+    try {
+      setSaving(true);
+      await api.delete(`/payments/${paymentId}`);
+      show('Mês removido', 'info');
+      await reloadPayments();
+    } catch (err: any) {
+      show(err.response?.data?.error || 'Erro ao remover', 'error');
+    } finally { setSaving(false); }
+  };
+
   if (fetching) {
     return (
       <MobileShell title="Carregando..." tabs={tabs}
@@ -1565,14 +1711,50 @@ function TrainerStudentDetail() {
           {student.name.charAt(0)}
         </div>
         <h2 className="text-lg font-black">{student.name}</h2>
-        <div className="flex flex-wrap justify-center gap-2 mt-2">
+        <div className="flex flex-wrap justify-center gap-2 mt-2 mb-3">
           <span className={cn('badge', student.isApproved ? 'badge-approved' : 'badge-pending')}>
             {student.isApproved ? 'Aprovado' : 'Pendente'}
           </span>
-          <span className="badge font-mono" style={{ backgroundColor: 'var(--color-surface)' }}>
-            ID {formatStudentId(student.studentId)}
-          </span>
         </div>
+        {!student.isApproved && (
+          <div className="grid grid-cols-2 gap-3 max-w-sm mx-auto mt-3">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={async () => {
+                try {
+                  const res = await api.post('/students/reject', { studentId: student.studentId });
+                  if (res.data.success) {
+                    show('Solicitação recusada. O aluno foi notificado.', 'info');
+                    navigate('/trainer/students');
+                  }
+                } catch (err: any) {
+                  show(err.response?.data?.error || 'Erro ao recusar', 'error');
+                }
+              }}>
+              <X className="w-4 h-4 mr-1" /> Recusar
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={async () => {
+                try {
+                  setSaving(true);
+                  const res = await api.post('/students/approve', { studentId: student.studentId });
+                  if (res.data.success) {
+                    setStudent({ ...student, isApproved: true });
+                    show(`${student.name} aprovado com sucesso!`, 'success');
+                  }
+                } catch (err: any) {
+                  show(err.response?.data?.error || 'Erro ao aprovar', 'error');
+                } finally {
+                  setSaving(false);
+                }
+              }}>
+              <CheckCircle className="w-4 h-4 mr-1" /> Aprovar
+            </button>
+          </div>
+        )}
       </div>
 
       {editing ? (
@@ -1657,16 +1839,454 @@ function TrainerStudentDetail() {
               ))}
           </div>
 
+          <div className="mt-4 space-y-4">
+            <h3 className="font-bold flex items-center gap-2 px-1"><CreditCard className="w-5 h-5 text-brand" /> Controle de Mensalidades</h3>
+
+            <div className="card space-y-4">
+              <h4 className="font-semibold flex items-center gap-2"><Plus className="w-4 h-4" /> Adicionar Mês</h4>
+              <div>
+                <label className="label">Mês de referência</label>
+                <input type="month" className="input-field" value={newMonth} onChange={e => setNewMonth(e.target.value)} />
+              </div>
+              <button type="button" className="btn-secondary w-full" onClick={addMonthPayment} disabled={saving}>
+                + Adicionar ao histórico
+              </button>
+            </div>
+
+            <div className="card !p-0 overflow-hidden">
+              <div className="p-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
+                <h4 className="font-semibold flex items-center gap-2"><Clock className="w-4 h-4" /> Histórico</h4>
+              </div>
+              {payments.length === 0 ? (
+                <EmptyState icon={CreditCard} title="Nenhum mês registrado" subtitle="Adicione o primeiro mês acima para começar a controlar" />
+              ) : (
+                <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                  {[...payments].sort((a, b) => a.referenceMonth < b.referenceMonth ? 1 : -1).map((p: Payment) => (
+                    <div key={p.id} className="p-4">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold">{monthLabel(p.referenceMonth)}</span>
+                          {p.status === 'PAID' ? (
+                            <span className="badge badge-approved">
+                              <CheckCircle className="w-3 h-3 mr-1 -ml-1" /> Pago
+                            </span>
+                          ) : (
+                            <span className="badge badge-pending">
+                              Não pago
+                            </span>
+                          )}
+                        </div>
+                        {p.paidAt && (
+                          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            Em {formatDate(p.paidAt)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className={cn(
+                            'flex-1 !py-2 text-sm',
+                            p.status === 'PAID' ? 'btn-ghost' : 'btn-primary'
+                          )}
+                          onClick={() => togglePaymentStatus(p)}>
+                          {p.status === 'PAID' ? '↺ Marcar como não pago' : '✓ Marcar como pago'}
+                        </button>
+                        <button type="button" className="btn-danger !py-2 text-sm" onClick={() => deletePayment(p.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="card mt-4 !p-0 overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
               <h3 className="font-bold flex items-center gap-2"><ClipboardList className="w-5 h-5 text-brand" /> Fichas de Treino</h3>
-              <button className="btn-ghost !py-2 !px-3 !min-h-0 text-sm" onClick={() => navigate('/trainer/workouts/new')}><Plus className="w-4 h-4" /> Novo</button>
+              <button className="btn-ghost !py-2 !px-3 !min-h-0 text-sm" onClick={() => navigate(`/trainer/workouts/new?studentId=${student.id}`)}><Plus className="w-4 h-4" /> Novo</button>
             </div>
-            <EmptyState icon={Dumbbell} title="Nenhum treino atribuído" subtitle="Atribua uma ficha de treino para este aluno" />
+            {studentWorkouts.length === 0
+              ? <EmptyState icon={Dumbbell} title="Nenhum treino atribuído" subtitle="Clique em Novo para montar a primeira ficha" />
+              : (
+                <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                  {studentWorkouts.map((w: any) => (
+                    <div key={w.id} className="p-4 flex items-center justify-between gap-3 active:bg-brand-50 cursor-pointer"
+                      onClick={() => navigate(`/trainer/workouts/${w.id}`)}>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={cn('badge', w.dayOfWeek != null ? 'badge-approved' : '')} style={w.dayOfWeek != null ? undefined : { backgroundColor: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
+                            {dayOfWeekShort(w.dayOfWeek)}
+                          </span>
+                          <p className="font-bold truncate">{w.title}</p>
+                        </div>
+                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                          {(w.exercises || []).length} exercícios · Criado em {formatDate(w.createdAt)}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
+                    </div>
+                  ))}
+                </div>
+              )}
           </div>
         </>
       )}
     </MobileShell>
+  );
+}
+
+const MUSCLE_GROUPS = [
+  'Peito', 'Costas', 'Ombros', 'Bíceps', 'Tríceps', 'Pernas', 'Glúteos',
+  'Abdômen', 'Panturrilha', 'Cardio', 'Core', 'Ombro', 'Posterior',
+];
+const DAYS_OF_WEEK: { label: string; value: number }[] = [
+  { label: 'Segunda-feira', value: 1 },
+  { label: 'Terça-feira', value: 2 },
+  { label: 'Quarta-feira', value: 3 },
+  { label: 'Quinta-feira', value: 4 },
+  { label: 'Sexta-feira', value: 5 },
+  { label: 'Sábado', value: 6 },
+  { label: 'Domingo', value: 0 },
+];
+
+function emptyExercise() {
+  return {
+    name: '',
+    muscleGroup: '' as string | null,
+    sets: 3,
+    reps: '12',
+    restSeconds: 60,
+    loadKg: '' as number | '',
+    youtubeUrl: '',
+    notes: '',
+    orderIndex: 0,
+  };
+}
+
+function TrainerWorkoutsNew() {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const { toast, show } = useToast();
+  const urlParams = new URLSearchParams(window.location.search);
+  const preStudentId = urlParams.get('studentId') || '';
+
+  const tabs = getTabsForRole(user?.role);
+  const [approvedStudents, setApprovedStudents] = useState<Student[]>([]);
+  const [studentId, setStudentId] = useState<string>(preStudentId);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [dayOfWeek, setDayOfWeek] = useState<number | ''>('');
+  const [exercises, setExercises] = useState<ReturnType<typeof emptyExercise>[]>([emptyExercise()]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get('/students?status=approved').then((r) => setApprovedStudents(r.data.data || []));
+  }, []);
+
+  const addExercise = () => setExercises((prev) => [...prev, { ...emptyExercise(), orderIndex: prev.length }]);
+  const removeExercise = (idx: number) => {
+    if (exercises.length <= 1) return;
+    setExercises((prev) => prev.filter((_, i) => i !== idx));
+  };
+  const updateExercise = (idx: number, patch: Partial<ReturnType<typeof emptyExercise>>) => {
+    setExercises((prev) => prev.map((e, i) => i === idx ? { ...e, ...patch } : e));
+  };
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!studentId) return show('Selecione o aluno', 'error');
+    if (!title.trim()) return show('Informe o título da ficha', 'error');
+    if (dayOfWeek === '') return show('Selecione o dia da semana', 'error');
+    const validEx = exercises.filter(ex => ex.name.trim().length > 0);
+    if (validEx.length === 0) return show('Adicione pelo menos 1 exercício', 'error');
+    try {
+      setSaving(true);
+      const res = await api.post('/workouts', {
+        studentId,
+        title: title.trim(),
+        description: description.trim() || null,
+        dayOfWeek: Number(dayOfWeek),
+        exercises: validEx.map((ex, i) => ({
+          name: ex.name.trim(),
+          muscleGroup: ex.muscleGroup || null,
+          sets: Number(ex.sets) || 3,
+          reps: String(ex.reps || '12'),
+          restSeconds: ex.restSeconds ? Number(ex.restSeconds) : null,
+          loadKg: ex.loadKg === '' ? null : Number(ex.loadKg),
+          youtubeUrl: ex.youtubeUrl.trim() || null,
+          notes: ex.notes.trim() || null,
+          orderIndex: i,
+        })),
+      });
+      if (res.data.success) {
+        show('Ficha criada com sucesso!', 'success');
+        setTimeout(() => navigate(`/trainer/students/${studentId}`), 900);
+      }
+    } catch (err: any) {
+      show(err?.response?.data?.error || 'Erro ao criar ficha', 'error');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <MobileShell title="Nova Ficha" tabs={tabs}
+      left={<button className="btn-ghost !py-2 !px-2 !min-h-0" onClick={() => navigate(-1 as any)}><ChevronLeft className="w-6 h-6" /></button>}>
+      {toast && <Toast message={toast.msg} type={toast.type} />}
+      <form onSubmit={onSubmit} className="space-y-5 pb-10">
+        <div className="card !p-5 bg-brand-gradient text-white border-none">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+              style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
+              <Dumbbell className="w-6 h-6" style={{ color: 'var(--color-accent-lime)' }} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black">Montar Ficha</h2>
+              <p className="text-xs opacity-85">Escolha o aluno, dia e monte os exercícios.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card space-y-4">
+          <div>
+            <label className="label">Aluno *</label>
+            <select className="input-field" value={studentId} onChange={e => setStudentId(e.target.value)} required>
+              <option value="">Selecione o aluno aprovado</option>
+              {approvedStudents.map(s => (
+                <option key={s.id} value={s.id}>{s.name}{s.email ? ` · ${s.email}` : ''}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Título da ficha *</label>
+              <input className="input-field" value={title} onChange={e => setTitle(e.target.value)}
+                placeholder="Ex: Treino A - Peito e Tríceps" maxLength={100} required />
+            </div>
+            <div>
+              <label className="label">Dia da semana *</label>
+              <select className="input-field" value={String(dayOfWeek)}
+                onChange={e => setDayOfWeek(e.target.value === '' ? '' : Number(e.target.value))} required>
+                <option value="">Selecione o dia</option>
+                {DAYS_OF_WEEK.map(d => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Observações gerais (opcional)</label>
+            <textarea className="input-field min-h-[80px]" value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Ex: Focar na execução controlada, 2s excêntrico." />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold flex items-center gap-2"><Dumbbell className="w-5 h-5 text-brand" /> Exercícios ({exercises.filter(e => e.name.trim()).length})</h3>
+            <button type="button" className="btn-ghost !py-2 !px-3 !min-h-0 text-sm" onClick={addExercise}>
+              <Plus className="w-4 h-4" /> Adicionar
+            </button>
+          </div>
+
+          {exercises.map((ex, idx) => (
+            <div key={idx} className="card !p-4 relative">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm"
+                    style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}>{idx + 1}</span>
+                  <input className="input-field !py-2 !text-base font-bold !min-h-0 flex-1"
+                    placeholder="Nome do exercício * (ex: Supino reto)"
+                    value={ex.name} onChange={e => updateExercise(idx, { name: e.target.value })} />
+                </div>
+                {exercises.length > 1 && (
+                  <button type="button" className="btn-ghost !py-1 !px-2 !min-h-0" aria-label="Remover"
+                    onClick={() => removeExercise(idx)}>
+                    <X className="w-4 h-4" style={{ color: '#c0392b' }} />
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                <div>
+                  <label className="label">Grupo muscular</label>
+                  <select className="input-field !py-2 text-sm" value={ex.muscleGroup || ''}
+                    onChange={e => updateExercise(idx, { muscleGroup: e.target.value || null })}>
+                    <option value="">Selecione</option>
+                    {MUSCLE_GROUPS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Séries</label>
+                  <input type="number" min={1} step={1} className="input-field !py-2 text-sm"
+                    value={ex.sets} onChange={e => updateExercise(idx, { sets: Number(e.target.value || 1) })} />
+                </div>
+                <div>
+                  <label className="label">Repetições</label>
+                  <input className="input-field !py-2 text-sm" placeholder="12 ou 8-12"
+                    value={ex.reps} onChange={e => updateExercise(idx, { reps: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Descanso (s)</label>
+                  <input type="number" min={0} step={5} className="input-field !py-2 text-sm"
+                    value={ex.restSeconds} onChange={e => updateExercise(idx, { restSeconds: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="label">Carga (kg, opcional)</label>
+                  <input type="number" min={0} step={0.5} className="input-field !py-2 text-sm" placeholder="Ex: 20"
+                    value={ex.loadKg} onChange={e => updateExercise(idx, { loadKg: e.target.value === '' ? '' : Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="label">Vídeo YouTube (demonstração)</label>
+                  <input className="input-field !py-2 text-sm" placeholder="https://www.youtube.com/watch?v=..."
+                    value={ex.youtubeUrl} onChange={e => updateExercise(idx, { youtubeUrl: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <label className="label">Dicas / observações do exercício</label>
+                <input className="input-field !py-2 text-sm" placeholder="Ex: Cotovelos fechados, não travar os joelhos."
+                  value={ex.notes} onChange={e => updateExercise(idx, { notes: e.target.value })} />
+              </div>
+              {extractYouTubeId(ex.youtubeUrl) && (
+                <div className="mt-3 rounded-2xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                  <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+                    <iframe className="absolute inset-0 w-full h-full"
+                      src={`https://www.youtube.com/embed/${extractYouTubeId(ex.youtubeUrl)}?rel=0`}
+                      title="Pré-visualização" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+                  </div>
+                  <div className="px-3 py-2 text-xs font-semibold" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
+                    ✔ Prévia do vídeo carregada
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="sticky bottom-2 z-10">
+          <button type="submit" className="btn-primary w-full !text-base" disabled={saving}>
+            {saving ? 'Salvando...' : (<span className="flex items-center justify-center gap-2"><Check className="w-5 h-5" /> Salvar Ficha</span>)}
+          </button>
+        </div>
+      </form>
+    </MobileShell>
+  );
+}
+
+function TrainerWorkouts() {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const tabs = getTabsForRole(user?.role);
+  const { toast, show } = useToast();
+  const [filterDay, setFilterDay] = useState<number | 'all'>('all');
+  const [workouts, setWorkouts] = useState<any[]>([]);
+  const [students, setStudents] = useState<Map<string, Student>>(new Map());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/students?status=approved'),
+      api.get('/students?status=pending'),
+    ]).then(([approved, pending]) => {
+      const list: Student[] = [...(approved.data.data || []), ...(pending.data.data || [])];
+      const map = new Map(list.map(s => [s.id, s]));
+      setStudents(map);
+      const ids = list.map(s => s.id);
+      Promise.all(ids.map(id => api.get(`/workouts/student/${id}`).catch(() => ({ data: { data: [] } })))).then(results => {
+        const all: any[] = [];
+        results.forEach(r => (r.data.data || []).forEach((w: any) => all.push(w)));
+        setWorkouts(all);
+        setLoading(false);
+      });
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const filtered = filterDay === 'all' ? workouts : workouts.filter(w => w.dayOfWeek === filterDay);
+  const groupedByStudent = filtered.reduce<Record<string, any[]>>((acc, w) => {
+    (acc[w.studentId] ||= []).push(w);
+    return acc;
+  }, {});
+
+  return (
+    <MobileShell title="Fichas de Treino" tabs={tabs}
+      right={<button className="btn-ghost !py-2 !px-2 !min-h-0" onClick={() => navigate('/trainer/workouts/new')}><Plus className="w-5 h-5" /></button>}>
+      {toast && <Toast message={toast.msg} type={toast.type} />}
+
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-1 -mx-2 px-2">
+        <button className={cn('chip !whitespace-nowrap !py-2', filterDay === 'all' && 'chip-active')}
+          onClick={() => setFilterDay('all')}>Todos</button>
+        {DAYS_OF_WEEK.map(d => (
+          <button key={d.value} className={cn('chip !whitespace-nowrap !py-2', filterDay === d.value && 'chip-active')}
+            onClick={() => setFilterDay(d.value)}>
+            {d.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          <div className="skeleton h-40 rounded-2xl" />
+          <div className="skeleton h-40 rounded-2xl" />
+        </div>
+      ) : workouts.length === 0 ? (
+        <EmptyState icon={Dumbbell} title="Sem fichas ainda"
+          subtitle="Clique no + acima para criar a primeira ficha de treino" />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={Dumbbell} title="Nenhuma ficha para este dia"
+          subtitle="Tente outro dia ou clique em + para criar uma nova" />
+      ) : (
+        <div className="space-y-5">
+          {Object.entries(groupedByStudent).map(([sid, ws]) => {
+            const s = students.get(sid);
+            ws.sort((a, b) => (a.dayOfWeek ?? 99) - (b.dayOfWeek ?? 99));
+            return (
+              <div key={sid} className="card !p-0 overflow-hidden">
+                <div className="p-4 flex items-center justify-between" style={{ backgroundColor: 'var(--color-bg)', borderBottom: '1px solid var(--color-border)' }}>
+                  <div>
+                    <p className="font-black">{s?.name ?? 'Aluno'}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{ws.length} ficha(s)</p>
+                  </div>
+                  <button className="btn-ghost !py-2 !px-3 !min-h-0 text-xs" onClick={() => navigate(`/trainer/students/${sid}`)}>
+                    Ver aluno →
+                  </button>
+                </div>
+                <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                  {ws.map((w: any) => (
+                    <div key={w.id} className="p-4 flex items-center justify-between gap-3 cursor-pointer active:bg-brand-50"
+                      onClick={() => navigate(`/trainer/workouts/${w.id}`)}>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={cn('badge', w.dayOfWeek != null ? 'badge-approved' : '')} style={w.dayOfWeek != null ? undefined : { backgroundColor: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
+                            {dayOfWeekShort(w.dayOfWeek)}
+                          </span>
+                          <p className="font-bold truncate">{w.title}</p>
+                          {w.isCompleted && <span className="badge badge-approved">✓</span>}
+                        </div>
+                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                          {(w.exercises || []).length} exercícios · Criado {formatDate(w.createdAt)}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </MobileShell>
+  );
+}
+
+function ChevronRight({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
   );
 }
 
@@ -1681,9 +2301,6 @@ function PlaceholderPage({ title, icon: Icon, subtitle }: { title: string; icon:
 }
 
 export default function App() {
-  const { applyTheme } = useAuthStore();
-  useEffect(() => { applyTheme(null); }, [applyTheme]);
-
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
@@ -1699,9 +2316,9 @@ export default function App() {
       <Route path="/trainer" element={<ProtectedRoute role="TRAINER"><TrainerDashboard /></ProtectedRoute>} />
       <Route path="/trainer/students" element={<ProtectedRoute role="TRAINER"><TrainerStudents /></ProtectedRoute>} />
       <Route path="/trainer/students/:id" element={<ProtectedRoute role="TRAINER"><TrainerStudentDetail /></ProtectedRoute>} />
-      <Route path="/trainer/approve" element={<ProtectedRoute role="TRAINER"><TrainerApprovePage /></ProtectedRoute>} />
-      <Route path="/trainer/workouts" element={<ProtectedRoute role="TRAINER"><PlaceholderPage title="Fichas de Treino" icon={Dumbbell} subtitle="Gerencie todos os treinos dos seus alunos" /></ProtectedRoute>} />
-      <Route path="/trainer/workouts/new" element={<ProtectedRoute role="TRAINER"><PlaceholderPage title="Criar Ficha" icon={Plus} subtitle="Monte um novo treino para um aluno" /></ProtectedRoute>} />
+      <Route path="/trainer/workouts" element={<ProtectedRoute role="TRAINER"><TrainerWorkouts /></ProtectedRoute>} />
+      <Route path="/trainer/workouts/new" element={<ProtectedRoute role="TRAINER"><TrainerWorkoutsNew /></ProtectedRoute>} />
+      <Route path="/trainer/workouts/:id" element={<ProtectedRoute role="TRAINER"><StudentWorkoutDetail /></ProtectedRoute>} />
       <Route path="/trainer/profile" element={<ProtectedRoute role="TRAINER"><GenericProfilePage /></ProtectedRoute>} />
 
       <Route path="/student" element={<ProtectedRoute role="STUDENT"><StudentDashboard /></ProtectedRoute>} />

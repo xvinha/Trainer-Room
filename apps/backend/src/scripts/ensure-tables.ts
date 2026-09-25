@@ -51,14 +51,40 @@ CREATE TABLE IF NOT EXISTS students (
   is_approved BOOLEAN NOT NULL DEFAULT false,
   approved_at TIMESTAMPTZ,
   approved_by UUID REFERENCES users(id),
+  plan_monthly_value NUMERIC(8,2),
+  plan_due_day INTEGER,
+  plan_status VARCHAR(16) NOT NULL DEFAULT 'INACTIVE',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS students_student_id_idx ON students (tenant_id, student_id);
+CREATE INDEX IF NOT EXISTS students_student_id_idx ON students (tenant_id, student_id);
 CREATE INDEX IF NOT EXISTS students_tenant_idx ON students (tenant_id);
 CREATE INDEX IF NOT EXISTS students_approval_idx ON students (tenant_id, is_approved);
+CREATE INDEX IF NOT EXISTS students_plan_status_idx ON students (tenant_id, plan_status);
 CREATE INDEX IF NOT EXISTS students_user_idx ON students (user_id);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  reference_month VARCHAR(7) NOT NULL,
+  due_date DATE NOT NULL,
+  amount_brl NUMERIC(8,2) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+  paid_at TIMESTAMPTZ,
+  paid_by UUID REFERENCES users(id),
+  payment_method VARCHAR(30),
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS payments_tenant_idx ON payments (tenant_id);
+CREATE INDEX IF NOT EXISTS payments_student_idx ON payments (student_id);
+CREATE UNIQUE INDEX IF NOT EXISTS payments_student_month_idx ON payments (student_id, reference_month);
+CREATE INDEX IF NOT EXISTS payments_status_idx ON payments (tenant_id, status);
+CREATE INDEX IF NOT EXISTS payments_due_idx ON payments (tenant_id, due_date);
 
 CREATE TABLE IF NOT EXISTS student_progress (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -109,6 +135,7 @@ CREATE TABLE IF NOT EXISTS workout_exercises (
   rest_seconds INTEGER,
   load_kg NUMERIC(6,2),
   notes TEXT,
+  youtube_url VARCHAR(500),
   order_index INTEGER NOT NULL DEFAULT 0,
   is_completed BOOLEAN NOT NULL DEFAULT false,
   completed_sets INTEGER NOT NULL DEFAULT 0,

@@ -12,7 +12,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
+import { sql, relations } from 'drizzle-orm';
 
 export const tenants = pgTable(
   'tenants',
@@ -21,10 +21,10 @@ export const tenants = pgTable(
     slug: varchar('slug', { length: 50 }).notNull(),
     name: varchar('name', { length: 100 }).notNull(),
     logoUrl: text('logo_url'),
-    primaryColor: varchar('primary_color', { length: 7 }).notNull().default('#6366F1'),
-    secondaryColor: varchar('secondary_color', { length: 7 }).notNull().default('#8B5CF6'),
-    accentColor: varchar('accent_color', { length: 7 }).notNull().default('#EC4899'),
-    backgroundColor: varchar('background_color', { length: 7 }).notNull().default('#FFFFFF'),
+    primaryColor: varchar('primary_color', { length: 7 }).notNull().default('#0F3D36'),
+    secondaryColor: varchar('secondary_color', { length: 7 }).notNull().default('#0B2E29'),
+    accentColor: varchar('accent_color', { length: 7 }).notNull().default('#C3F230'),
+    backgroundColor: varchar('background_color', { length: 7 }).notNull().default('#FCFDF8'),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -81,6 +81,9 @@ export const students = pgTable(
     isApproved: boolean('is_approved').notNull().default(false),
     approvedAt: timestamp('approved_at', { withTimezone: true }),
     approvedBy: uuid('approved_by').references(() => users.id),
+    planMonthlyValue: numeric('plan_monthly_value', { precision: 8, scale: 2 }),
+    planDueDay: integer('plan_due_day'),
+    planStatus: varchar('plan_status', { length: 16 }).notNull().default('INACTIVE'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -92,9 +95,47 @@ export const students = pgTable(
     studentIdUniqueIdx: uniqueIndex('students_student_id_idx').on(table.tenantId, table.studentId),
     tenantIdx: index('students_tenant_idx').on(table.tenantId),
     approvalIdx: index('students_approval_idx').on(table.tenantId, table.isApproved),
+    planStatusIdx: index('students_plan_status_idx').on(table.tenantId, table.planStatus),
     userIdx: index('students_user_idx').on(table.userId),
   })
 );
+
+export const payments = pgTable(
+  'payments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    studentId: uuid('student_id')
+      .notNull()
+      .references(() => students.id, { onDelete: 'cascade' }),
+    referenceMonth: varchar('reference_month', { length: 7 }).notNull(),
+    dueDate: date('due_date').notNull(),
+    amountBrl: numeric('amount_brl', { precision: 8, scale: 2 }).notNull(),
+    status: varchar('status', { length: 16 }).notNull().default('PENDING'),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    paidBy: uuid('paid_by').references(() => users.id),
+    paymentMethod: varchar('payment_method', { length: 30 }),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => ({
+    tenantIdx: index('payments_tenant_idx').on(table.tenantId),
+    studentIdx: index('payments_student_idx').on(table.studentId),
+    uniquePerStudentMonth: uniqueIndex('payments_student_month_idx').on(table.studentId, table.referenceMonth),
+    statusIdx: index('payments_status_idx').on(table.tenantId, table.status),
+    dueDateIdx: index('payments_due_idx').on(table.tenantId, table.dueDate),
+  })
+);
+
+export type Payment = typeof payments.$inferSelect;
+export type NewPayment = typeof payments.$inferInsert;
 
 export const studentProgress = pgTable(
   'student_progress',
@@ -173,6 +214,7 @@ export const workoutExercises = pgTable(
     restSeconds: integer('rest_seconds'),
     loadKg: numeric('load_kg', { precision: 6, scale: 2 }),
     notes: text('notes'),
+    youtubeUrl: varchar('youtube_url', { length: 500 }),
     orderIndex: integer('order_index').notNull().default(0),
     isCompleted: boolean('is_completed').notNull().default(false),
     completedSets: integer('completed_sets').notNull().default(0),
@@ -195,3 +237,48 @@ export type Workout = typeof workouts.$inferSelect;
 export type NewWorkout = typeof workouts.$inferInsert;
 export type WorkoutExercise = typeof workoutExercises.$inferSelect;
 export type NewWorkoutExercise = typeof workoutExercises.$inferInsert;
+
+export const tenantsRelations = relations(tenants, ({ many }) => ({
+  users: many(users),
+  students: many(students),
+  payments: many(payments),
+  studentProgress: many(studentProgress),
+  workouts: many(workouts),
+}));
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [users.tenantId], references: [tenants.id] }),
+  approvedStudents: many(students, { relationName: 'approvedByUser' }),
+  trainedWorkouts: many(workouts, { relationName: 'trainerUser' }),
+  studentProfile: many(students, { relationName: 'userProfile' }),
+}));
+
+export const studentsRelations = relations(students, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [students.tenantId], references: [tenants.id] }),
+  approvedBy: one(users, { fields: [students.approvedBy], references: [users.id], relationName: 'approvedByUser' }),
+  user: one(users, { fields: [students.userId], references: [users.id], relationName: 'userProfile' }),
+  payments: many(payments),
+  progress: many(studentProgress),
+  workouts: many(workouts),
+}));
+
+export const paymentsRelations = relations(payments, ({ one }) => ({
+  tenant: one(tenants, { fields: [payments.tenantId], references: [tenants.id] }),
+  student: one(students, { fields: [payments.studentId], references: [students.id] }),
+}));
+
+export const studentProgressRelations = relations(studentProgress, ({ one }) => ({
+  tenant: one(tenants, { fields: [studentProgress.tenantId], references: [tenants.id] }),
+  student: one(students, { fields: [studentProgress.studentId], references: [students.id] }),
+}));
+
+export const workoutsRelations = relations(workouts, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [workouts.tenantId], references: [tenants.id] }),
+  student: one(students, { fields: [workouts.studentId], references: [students.id] }),
+  trainer: one(users, { fields: [workouts.trainerId], references: [users.id], relationName: 'trainerUser' }),
+  exercises: many(workoutExercises),
+}));
+
+export const workoutExercisesRelations = relations(workoutExercises, ({ one }) => ({
+  workout: one(workouts, { fields: [workoutExercises.workoutId], references: [workouts.id] }),
+}));

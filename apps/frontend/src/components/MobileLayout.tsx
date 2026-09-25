@@ -118,8 +118,8 @@ export function EmptyState({ icon: Icon, title, subtitle }: { icon: LucideIcon; 
   );
 }
 
-export function Toast({ message, type = 'success' }: { message: string; type?: 'success' | 'error' | 'info' }) {
-  const bg = type === 'success' ? '#16A34A' : type === 'error' ? '#DC2626' : '#0369A1';
+export function Toast({ message, type = 'success' }: { message: string; type?: 'success' | 'error' | 'info' | 'warning' }) {
+  const bg = type === 'success' ? '#16A34A' : type === 'error' ? '#DC2626' : type === 'warning' ? '#D97706' : '#0369A1';
   return (
     <div className="fixed top-safe-top left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-xl shadow-mobile-lg text-white font-semibold text-sm animate-in slide-in-from-top"
       style={{ backgroundColor: bg, marginTop: '1rem' }}>
